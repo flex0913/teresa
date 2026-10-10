@@ -1,0 +1,1779 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>專業 PDF 標註工具 - 高解析度框選放大與無限延伸畫布</title>
+  <!-- 引入 PDF.js CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    * { 
+      box-sizing: border-box; 
+      margin: 0; 
+      padding: 0; 
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overscroll-behavior: none;
+      overflow: hidden;
+    }
+
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
+      display: flex; 
+      flex-direction: column; 
+      background: #f0f2f5; 
+    }
+
+    /* 全螢幕頂部列 */
+    #top-bar {
+      min-height: 60px;
+      height: 85px;
+      background: #1e1e1e;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      z-index: 1001;
+      flex-shrink: 0;
+    }
+
+    .brand-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-title {
+      font-size: 33px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+    }
+
+    /* 彩色標題個別字體色彩設定 */
+    .brand-title .char-de { color: #ff4d4f; }
+    .brand-title .char-lei { color: #40a9ff; }
+    .brand-title .char-sha { color: #ffec3d; }
+    .brand-title .char-wen { color: #73d13d; }
+    .brand-title .char-li { color: #ff9c6e; }
+
+    @media (min-width: 600px) {
+      .brand-title {
+        font-size: 42px;
+        letter-spacing: 2px;
+      }
+    }
+
+    .fullscreen-btn {
+      background: #409eff;
+      color: #fff;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: bold;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.2s;
+      white-space: nowrap;
+    }
+    .fullscreen-btn:hover { background: #66b1ff; }
+
+    /* 上方工具列 (內容置中) */
+    #toolbar {
+      height: 65px;
+      background: #ffffff;
+      border-bottom: 1px solid #dcdfe6;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 0 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+      z-index: 1000;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      flex-shrink: 0;
+    }
+
+    #toolbar::-webkit-scrollbar { display: none; }
+    #toolbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+    .tool-group { 
+      display: flex; 
+      align-items: center; 
+      gap: 4px; 
+      border-right: 1px solid #dcdfe6; 
+      padding-right: 8px; 
+      margin-right: 2px; 
+      flex-shrink: 0;
+    }
+    .tool-group:last-child { border-right: none; padding-right: 0; margin-right: 0; }
+    .tool-group label { font-size: 13px; color: #606266; white-space: nowrap; }
+
+    .tool-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 4px 6px;
+      border: 1px solid transparent;
+      background: transparent;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s, transform 0.1s;
+      min-width: 48px;
+    }
+    .tool-btn:hover { background: #f2f6fc; }
+    .tool-btn.active { background: #ecf5ff; border-color: #409eff; color: #409eff; }
+    
+    .tool-icon { font-size: 18px; margin-bottom: 2px; display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; }
+    .tool-text { font-size: 11px; font-weight: 500; color: #303133; white-space: nowrap; }
+
+    /* 精緻向量圖示通用類別 */
+    .svg-tool-icon {
+      width: 22px;
+      height: 22px;
+      display: inline-block;
+    }
+
+    .svg-undo-icon {
+      width: 20px;
+      height: 20px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2.2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    /* 兩側浮動工具列 */
+    .side-panel {
+      position: fixed;
+      top: 55%;
+      transform: translateY(-50%);
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid #dcdfe6;
+      border-radius: 24px;
+      padding: 8px 5px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      z-index: 2000;
+      backdrop-filter: blur(5px);
+    }
+    #side-panel-left { left: 8px; }
+    #side-panel-right { right: 8px; }
+
+    .side-tool-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      background: #f4f4f5;
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      user-select: none;
+      color: #303133;
+    }
+    .side-tool-btn:active { transform: scale(0.95); }
+    .side-tool-btn.active {
+      background: #ecf5ff;
+      border-color: #409eff;
+      box-shadow: 0 0 0 2px rgba(64,158,255,0.3);
+      color: #409eff;
+    }
+
+    .side-color-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding-top: 4px;
+      border-top: 1px solid #e4e7ed;
+    }
+
+    .color-btn {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      border: 2px solid #ffffff;
+      box-shadow: 0 0 0 1.5px #dcdfe6;
+      cursor: pointer;
+      transition: transform 0.2s;
+      flex-shrink: 0;
+    }
+    .color-btn.selected { transform: scale(1.25); box-shadow: 0 0 0 2px #409eff; }
+
+    /* 側邊欄頁碼按鈕樣式 */
+    .side-page-btn {
+      margin-top: 4px;
+      padding-top: 6px;
+      border-top: 1px solid #e4e7ed;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      background: #409eff;
+      color: #ffffff;
+      border-radius: 12px;
+      padding: 6px 4px;
+      width: 40px;
+      box-shadow: 0 2px 6px rgba(64,158,255,0.3);
+      transition: transform 0.15s, background 0.2s;
+    }
+    .side-page-btn:hover { background: #66b1ff; }
+    .side-page-btn:active { transform: scale(0.95); }
+    .side-page-btn .page-icon { font-size: 11px; margin-bottom: 1px; }
+    .side-page-btn .page-num-text { font-size: 10px; font-weight: bold; line-height: 1.1; white-space: nowrap; }
+
+    /* 計算機 Modal 樣式 */
+    .page-modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.45);
+      backdrop-filter: blur(3px);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+    }
+
+    .page-calc-card {
+      background: #ffffff;
+      padding: 20px;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+      width: 280px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      animation: modalFadeIn 0.2s ease-out;
+    }
+
+    @keyframes modalFadeIn {
+      from { opacity: 0; transform: scale(0.9); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    .calc-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 15px;
+      font-weight: bold;
+      color: #303133;
+    }
+
+    .calc-display {
+      width: 100%;
+      height: 45px;
+      font-size: 1.4rem;
+      font-weight: bold;
+      text-align: right;
+      padding: 0 12px;
+      border: 1px solid #dcdfe6;
+      border-radius: 8px;
+      background: #f8f9fa;
+      color: #303133;
+      outline: none;
+    }
+
+    .calc-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .calc-key {
+      height: 45px;
+      font-size: 1.2rem;
+      font-weight: 600;
+      border: 1px solid #dcdfe6;
+      background: #ffffff;
+      color: #303133;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s, transform 0.05s;
+    }
+    .calc-key:active { transform: scale(0.96); background: #f2f6fc; }
+    .calc-key.btn-clear { background: #fef0f0; color: #f56c6c; border-color: #fde2e2; }
+    .calc-key.btn-clear:active { background: #fde2e2; }
+    .calc-key.btn-back { background: #f4f4f5; color: #909399; }
+    
+    .calc-confirm-btn {
+      width: 100%;
+      height: 42px;
+      background: #409eff;
+      color: #ffffff;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .calc-confirm-btn:hover { background: #66b1ff; }
+    .calc-confirm-btn:active { transform: scale(0.98); }
+
+    /* PDF 與畫布區域 */
+    #pdf-viewer-container {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: auto;
+      padding: 10px 0;
+      background: #f0f2f5;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      position: relative;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-x pan-y;
+    }
+
+    /* 抓取滑動時的游標樣式 */
+    #pdf-viewer-container.mode-hand {
+      cursor: grab;
+      touch-action: pan-x pan-y;
+    }
+    #pdf-viewer-container.mode-hand:active {
+      cursor: grabbing;
+    }
+
+    #pdf-pages-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 15px;
+      width: 100%;
+    }
+
+    .page-container {
+      position: relative;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+      background: #ffffff;
+      border-radius: 4px;
+      margin: 0 auto;
+      touch-action: none;
+    }
+    .pdf-canvas { display: block; background: #ffffff; }
+    .draw-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      cursor: crosshair;
+      touch-action: none;
+    }
+
+    /* 橡皮擦跟隨圓圈 */
+    #eraser-cursor {
+      position: absolute;
+      border: 1px solid #ff4d4f;
+      background: rgba(255, 77, 79, 0.2);
+      border-radius: 50%;
+      pointer-events: none;
+      display: none;
+      z-index: 9999;
+      transform: translate(-50%, -50%);
+    }
+
+    /* 縮放與控制面板 */
+    #zoom-controls {
+      position: fixed;
+      bottom: 15px;
+      right: 15px;
+      display: none;
+      gap: 8px;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 6px 12px;
+      border-radius: 30px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+      z-index: 2000;
+    }
+    
+    .zoom-btn {
+      background: #f4f4f5;
+      border: 1px solid #dcdfe6;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #btn-reset-crop {
+      padding: 5px 12px;
+      background: #409eff;
+      color: #fff;
+      border: none;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: bold;
+    }
+
+    /* 提示訊息浮條 */
+    #status-bar {
+      position: fixed;
+      bottom: 15px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(30, 30, 30, 0.88);
+      color: #fff;
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-size: 12px;
+      display: none;
+      z-index: 3000;
+      backdrop-filter: blur(4px);
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 頂部列 -->
+  <div id="top-bar">
+    <div class="brand-container">
+      <span class="brand-title">
+        <span class="char-de">德</span><span class="char-lei">蕾</span><span class="char-sha">莎</span><span class="char-wen">文</span><span class="char-li">理</span>
+      </span>
+    </div>
+
+    <button class="fullscreen-btn" id="btn-fullscreen" onclick="toggleFullScreen()">
+      <span id="fs-icon">⛶</span> <span id="fs-text">全螢幕</span>
+    </button>
+  </div>
+
+  <!-- SVG 可愛風格圖示模板庫 -->
+  <svg style="display: none;">
+    <!-- 鼠標游標圖示 (Mouse Cursor / Pointer) -->
+    <g id="custom-cursor-svg">
+      <path d="M 25 15 L 25 110 L 50 85 L 70 120 L 85 110 L 65 75 L 100 75 Z" fill="#409EFF" stroke="#FFFFFF" stroke-width="8" stroke-linejoin="round" stroke-linecap="round"/>
+      <path d="M 25 15 L 25 110 L 50 85 L 70 120 L 85 110 L 65 75 L 100 75 Z" fill="#409EFF"/>
+    </g>
+
+    <!-- 圓規圖示 -->
+    <g id="custom-compass-svg">
+      <rect x="42" y="5" width="16" height="20" rx="8" fill="#6A7BB8"/>
+      <path d="M 30,25 L 70,25 Q 70,25 70,55 L 50,70 L 30,55 Z" fill="#EE535C"/>
+      <circle cx="50" cy="40" r="8" fill="#F4DC42"/>
+      <path d="M 32,55 L 43,120 L 51,120 L 45,55 Z" fill="#B2D8C9"/>
+      <path d="M 55,55 L 65,120 L 55,120 L 48,55 Z" fill="#B2D8C9"/>
+      <polygon points="63,120 65,135 58,120" fill="#606060"/>
+      <circle cx="37" cy="100" r="14" fill="#5885AF"/>
+      <circle cx="37" cy="100" r="4" fill="#F4DC42"/>
+      <rect x="18" y="70" width="16" height="40" rx="3" fill="#E88B23"/>
+      <polygon points="18,110 34,110 26,128" fill="#F8D1B1"/>
+      <polygon points="23,121 29,121 26,128" fill="#333333"/>
+    </g>
+
+    <!-- 畫筆圖示（可愛粉紅馬卡龍配色） -->
+    <g id="custom-pen-svg">
+      <path d="M 30 110 L 45 125 L 125 45 C 130 40 130 30 125 25 L 115 15 C 110 10 100 10 95 15 Z" fill="#FF85C0"/>
+      <path d="M 100 20 L 120 40 L 110 50 L 90 30 Z" fill="#FFADD2"/>
+      <polygon points="30,110 45,125 15,135" fill="#FFE7BA"/>
+      <polygon points="20,125 25,130 15,135" fill="#595959"/>
+      <line x1="45" y1="95" x2="105" y2="35" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" opacity="0.8"/>
+    </g>
+
+    <!-- 蜻蜓牌 (MONO) 配色橡皮擦圖示（方向朝左、淡藍色） -->
+    <g id="custom-eraser-svg">
+      <g transform="rotate(22 70 70)">
+        <rect x="20" y="32" width="95" height="70" rx="8" fill="#FAFAFA" stroke="#E8E8E8" stroke-width="2"/>
+        <rect x="45" y="32" width="70" height="70" rx="4" fill="#66B1FF"/>
+        <rect x="45" y="55" width="70" height="24" fill="#FFFFFF"/>
+        <rect x="45" y="79" width="70" height="23" rx="4" fill="#222222"/>
+        <rect x="52" y="64" width="14" height="6" rx="1" fill="#222222"/>
+        <path d="M 45 32 Q 40 67 45 102" fill="none" stroke="#FFFFFF" stroke-width="2"/>
+      </g>
+    </g>
+
+    <!-- 框選放大圖示 (可愛放大鏡) -->
+    <g id="custom-crop-svg">
+      <circle cx="55" cy="55" r="38" fill="none" stroke="#40A9FF" stroke-width="14"/>
+      <circle cx="55" cy="55" r="38" fill="none" stroke="#6A7BB8" stroke-width="6"/>
+      <path d="M 82 82 L 125 125" stroke="#EE535C" stroke-width="18" stroke-linecap="round"/>
+      <path d="M 82 82 L 125 125" stroke="#F4DC42" stroke-width="8" stroke-linecap="round"/>
+      <path d="M 35 40 A 25 25 0 0 1 65 25" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" opacity="0.8"/>
+    </g>
+
+    <!-- 復原圖示 -->
+    <g id="custom-undo-svg">
+      <path d="M 9 14 L 4 9 L 9 4" />
+      <path d="M 4 9 Q 13 4 18 10 Q 21 15 17 20" />
+    </g>
+  </svg>
+
+  <!-- 左側快捷工具列 -->
+  <div id="side-panel-left" class="side-panel">
+    <div class="side-tool-btn" onclick="undoLastAction()" title="復原上一步">
+      <svg class="svg-undo-icon" viewBox="0 0 24 24"><use href="#custom-undo-svg"/></svg>
+    </div>
+    <div class="side-tool-btn side-hand" onclick="setMode('hand')" title="選取">
+      <svg class="svg-tool-icon" viewBox="0 0 130 130"><use href="#custom-cursor-svg"/></svg>
+    </div>
+    <div class="side-tool-btn side-crop" onclick="setMode('crop')" title="框選放大">
+      <svg class="svg-tool-icon" viewBox="0 0 140 140"><use href="#custom-crop-svg"/></svg>
+    </div>
+    <div class="side-tool-btn side-pen active" onclick="setMode('pen')" title="畫筆">
+      <svg class="svg-tool-icon" viewBox="0 0 140 140"><use href="#custom-pen-svg"/></svg>
+    </div>
+    <div class="side-tool-btn side-compass" onclick="setMode('compass')" title="圓規畫弧">
+      <svg class="svg-tool-icon" viewBox="0 0 100 140"><use href="#custom-compass-svg"/></svg>
+    </div>
+    <div class="side-tool-btn side-eraser" onclick="setMode('eraser')" title="橡皮擦">
+      <svg class="svg-tool-icon" viewBox="0 0 140 140"><use href="#custom-eraser-svg"/></svg>
+    </div>
+    <div class="side-color-group">
+      <div class="color-btn selected" style="background: #000000;" data-color="#000000" onclick="selectColor('#000000')"></div>
+      <div class="color-btn" style="background: #0000ff;" data-color="#0000ff" onclick="selectColor('#0000ff')"></div>
+      <div class="color-btn" style="background: #ff0000;" data-color="#ff0000" onclick="selectColor('#ff0000')"></div>
+      <div class="color-btn" style="background: #800080;" data-color="#800080" onclick="selectColor('#800080')"></div>
+      <div class="color-btn" style="background: #008000;" data-color="#008000" onclick="selectColor('#008000')"></div>
+      <div class="color-btn" style="background: #ffd700;" data-color="#ffd700" onclick="selectColor('#ffd700')"></div>
+    </div>
+    <!-- 左側工具列頁碼按鈕 -->
+    <div class="side-page-btn" onclick="openPageCalculator()" title="點擊選擇頁碼">
+      <span class="page-icon">📄</span>
+      <span class="page-num-text side-page-display">1/1</span>
+    </div>
+  </div>
+
+  <!-- 右側快捷工具列 -->
+  <div id="side-panel-right" class="side-panel">
+    <div class="side-tool-btn" onclick="undoLastAction()" title="復原上一步">
+      <svg class="svg-undo-icon" viewBox="0 0 24 24"><use href="#custom-undo-svg"/></svg>
+    </div>
+    <div class="side-tool-btn side-hand" onclick="setMode('hand')" title="選取">
+      <svg class="svg-tool-icon" viewBox="0 0 130 130"><use href="#custom-cursor-svg"/></svg>
+    </div>
+    <div class="side-tool-btn side-crop" onclick="setMode('crop')" title="框選放大">
+      <svg class="svg-tool-icon" viewBox="0 0 140 140"><use href="#custom-crop-svg"/></svg>
+    </div>
+    <div class="side-tool-btn side-pen active" onclick="setMode('pen')" title="畫筆">
+      <svg class="svg-tool-icon" viewBox="0 0 140 140"><use href="#custom-pen-svg"/></svg>
+    </div>
+    <div class="side-tool-btn side-compass" onclick="setMode('compass')" title="圓規畫弧">
+      <svg class="svg-tool-icon" viewBox="0 0 100 140"><use href="#custom-compass-svg"/></svg>
+    </div>
+    <div class="side-tool-btn side-eraser" onclick="setMode('eraser')" title="橡皮擦">
+      <svg class="svg-tool-icon" viewBox="0 0 140 140"><use href="#custom-eraser-svg"/></svg>
+    </div>
+    <div class="side-color-group">
+      <div class="color-btn selected" style="background: #000000;" data-color="#000000" onclick="selectColor('#000000')"></div>
+      <div class="color-btn" style="background: #0000ff;" data-color="#0000ff" onclick="selectColor('#0000ff')"></div>
+      <div class="color-btn" style="background: #ff0000;" data-color="#ff0000" onclick="selectColor('#ff0000')"></div>
+      <div class="color-btn" style="background: #800080;" data-color="#800080" onclick="selectColor('#800080')"></div>
+      <div class="color-btn" style="background: #008000;" data-color="#008000" onclick="selectColor('#008000')"></div>
+      <div class="color-btn" style="background: #ffd700;" data-color="#ffd700" onclick="selectColor('#ffd700')"></div>
+    </div>
+    <!-- 右側工具列頁碼按鈕 -->
+    <div class="side-page-btn" onclick="openPageCalculator()" title="點擊選擇頁碼">
+      <span class="page-icon">📄</span>
+      <span class="page-num-text side-page-display">1/1</span>
+    </div>
+  </div>
+
+  <!-- 計算機選擇頁碼彈窗面板 -->
+  <div class="page-modal-overlay" id="pageCalcModal">
+    <div class="page-calc-card">
+      <div class="calc-header">
+        <span>跳轉頁碼</span>
+        <span style="font-size: 12px; color: #909399;">(總頁數: <span id="modalTotalPages">1</span>)</span>
+      </div>
+      <input type="text" id="calcInput" class="calc-display" readonly value="">
+      
+      <div class="calc-grid">
+        <button class="calc-key" onclick="calcAppendNum('1')">1</button>
+        <button class="calc-key" onclick="calcAppendNum('2')">2</button>
+        <button class="calc-key" onclick="calcAppendNum('3')">3</button>
+        <button class="calc-key" onclick="calcAppendNum('4')">4</button>
+        <button class="calc-key" onclick="calcAppendNum('5')">5</button>
+        <button class="calc-key" onclick="calcAppendNum('6')">6</button>
+        <button class="calc-key" onclick="calcAppendNum('7')">7</button>
+        <button class="calc-key" onclick="calcAppendNum('8')">8</button>
+        <button class="calc-key" onclick="calcAppendNum('9')">9</button>
+        <button class="calc-key btn-clear" onclick="calcClear()">C</button>
+        <button class="calc-key" onclick="calcAppendNum('0')">0</button>
+        <button class="calc-key btn-back" onclick="calcBackspace()">⌫</button>
+      </div>
+
+      <button class="calc-confirm-btn" onclick="applyPageJump()">確定跳頁</button>
+    </div>
+  </div>
+
+  <div id="eraser-cursor"></div>
+  <div id="status-bar">提示：點擊畫布以設定圓規圓心</div>
+
+  <!-- 縮放與復原懸浮按鈕 -->
+  <div id="zoom-controls">
+    <button class="zoom-btn" onclick="adjustCropZoom(-0.1)" title="縮小">-</button>
+    <span id="zoom-text" style="font-size: 12px; font-weight: bold; width: 40px; text-align: center;">100%</span>
+    <button class="zoom-btn" onclick="adjustCropZoom(0.1)" title="放大">+</button>
+    <button id="btn-reset-crop" onclick="resetCropView()">完整頁面</button>
+  </div>
+
+  <!-- 上方工具列 -->
+  <div id="toolbar">
+    <div class="tool-group">
+      <button class="tool-btn" onclick="undoLastAction()" title="復原上一步">
+        <span class="tool-icon">
+          <svg class="svg-undo-icon" viewBox="0 0 24 24"><use href="#custom-undo-svg"/></svg>
+        </span>
+        <span class="tool-text">復原</span>
+      </button>
+    </div>
+
+    <div class="tool-group">
+      <button id="btn-hand" class="tool-btn" onclick="setMode('hand')" title="選取">
+        <span class="tool-icon">
+          <svg class="svg-tool-icon" viewBox="0 0 130 130"><use href="#custom-cursor-svg"/></svg>
+        </span>
+        <span class="tool-text">選取</span>
+      </button>
+      <button id="btn-crop" class="tool-btn" onclick="setMode('crop')" title="框選放大">
+        <span class="tool-icon">
+          <svg class="svg-tool-icon" viewBox="0 0 140 140"><use href="#custom-crop-svg"/></svg>
+        </span>
+        <span class="tool-text">框選放大</span>
+      </button>
+      <button id="btn-pen" class="tool-btn active" onclick="setMode('pen')" title="畫筆">
+        <span class="tool-icon">
+          <svg class="svg-tool-icon" viewBox="0 0 140 140"><use href="#custom-pen-svg"/></svg>
+        </span>
+        <span class="tool-text">畫筆</span>
+      </button>
+      <button id="btn-compass" class="tool-btn" onclick="setMode('compass')" title="圓規畫弧">
+        <span class="tool-icon">
+          <svg class="svg-tool-icon" viewBox="0 0 100 140"><use href="#custom-compass-svg"/></svg>
+        </span>
+        <span class="tool-text">圓規畫弧</span>
+      </button>
+      <button id="btn-eraser" class="tool-btn" onclick="setMode('eraser')" title="橡皮擦">
+        <span class="tool-icon">
+          <svg class="svg-tool-icon" viewBox="0 0 140 140"><use href="#custom-eraser-svg"/></svg>
+        </span>
+        <span class="tool-text">橡皮擦</span>
+      </button>
+    </div>
+
+    <div class="tool-group">
+      <button class="tool-btn" id="btn-shape-line" onclick="setMode('shape', 'line')">
+        <span class="tool-icon">⎯</span>
+        <span class="tool-text">直線</span>
+      </button>
+      <button class="tool-btn" id="btn-shape-triangle" onclick="setMode('shape', 'triangle')">
+        <span class="tool-icon">△</span>
+        <span class="tool-text">三角形</span>
+      </button>
+      <button class="tool-btn" id="btn-shape-rect" onclick="setMode('shape', 'rect')">
+        <span class="tool-icon">□</span>
+        <span class="tool-text">長方形</span>
+      </button>
+      <button class="tool-btn" id="btn-shape-circle" onclick="setMode('shape', 'circle')">
+        <span class="tool-icon">○</span>
+        <span class="tool-text">圓形</span>
+      </button>
+      <button class="tool-btn" id="btn-shape-rtriangle" onclick="setMode('shape', 'rtriangle')">
+        <span class="tool-icon">⊿</span>
+        <span class="tool-text">直角△</span>
+      </button>
+    </div>
+
+    <div class="tool-group">
+      <label for="line-width"><span id="width-label-name">粗細</span> (<span id="width-val">4</span>px)：</label>
+      <input type="range" id="line-width" min="1" max="100" value="4" style="width: 70px;">
+    </div>
+
+    <div class="tool-group" id="color-palette">
+      <div class="color-btn selected" style="background: #000000;" data-color="#000000" onclick="selectColor('#000000')"></div>
+      <div class="color-btn" style="background: #0000ff;" data-color="#0000ff" onclick="selectColor('#0000ff')"></div>
+      <div class="color-btn" style="background: #ff0000;" data-color="#ff0000" onclick="selectColor('#ff0000')"></div>
+      <div class="color-btn" style="background: #800080;" data-color="#800080" onclick="selectColor('#800080')"></div>
+      <div class="color-btn" style="background: #008000;" data-color="#008000" onclick="selectColor('#008000')"></div>
+      <div class="color-btn" style="background: #ffd700;" data-color="#ffd700" onclick="selectColor('#ffd700')"></div>
+    </div>
+
+    <input type="file" id="file-input" accept="application/pdf" style="margin-left: 4px; font-size: 12px; max-width: 160px;">
+  </div>
+
+  <!-- PDF 呈現區 -->
+  <div id="pdf-viewer-container">
+    <div id="pdf-pages-wrapper"></div>
+  </div>
+
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    let currentMode = 'pen';
+    let currentShapeType = '';
+    let currentColor = '#000000';
+    let penWidth = 4;
+    let eraserWidth = 60;
+    let globalPdfDoc = null;
+    let currentPageNum = 1;
+    let totalPagesCount = 1;
+
+    let cropState = null; 
+    const extraMargin = 400;
+    const PX_PER_CM = 96 / 2.54;
+
+    const eraserCursor = document.getElementById('eraser-cursor');
+    const lineWidthInput = document.getElementById('line-width');
+    const statusBar = document.getElementById('status-bar');
+    const pdfContainer = document.getElementById('pdf-viewer-container');
+
+    let activeCanvasContext = null;
+
+    /* --- 頁碼與計算機 Modal 邏輯 --- */
+    function updatePageDisplay() {
+      const texts = document.querySelectorAll('.side-page-display');
+      texts.forEach(el => el.textContent = `${currentPageNum}/${totalPagesCount}`);
+      document.getElementById('modalTotalPages').textContent = totalPagesCount;
+    }
+
+    function openPageCalculator() {
+      const modal = document.getElementById('pageCalcModal');
+      // 開啟計算機時清空輸入框（不顯示數字）
+      document.getElementById('calcInput').value = ''; 
+      document.getElementById('modalTotalPages').textContent = totalPagesCount;
+      modal.style.display = 'flex';
+    }
+
+    function closePageCalculator() {
+      document.getElementById('pageCalcModal').style.display = 'none';
+    }
+
+    function calcAppendNum(num) {
+      const input = document.getElementById('calcInput');
+      if (input.value === '0') {
+        input.value = num;
+      } else {
+        input.value += num;
+      }
+    }
+
+    function calcClear() {
+      document.getElementById('calcInput').value = '';
+    }
+
+    function calcBackspace() {
+      const input = document.getElementById('calcInput');
+      input.value = input.value.slice(0, -1);
+    }
+
+    function applyPageJump() {
+      const input = document.getElementById('calcInput');
+      let page = parseInt(input.value, 10);
+      if (isNaN(page) || page < 1) page = 1;
+      if (page > totalPagesCount) page = totalPagesCount;
+
+      scrollToPage(page);
+      closePageCalculator();
+    }
+
+    function scrollToPage(pageNum) {
+      const targetPage = document.getElementById(`pdf-page-container-${pageNum}`);
+      if (targetPage) {
+        targetPage.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        currentPageNum = pageNum;
+        updatePageDisplay();
+      }
+    }
+
+    // 點擊 Modal 背景自動關閉
+    document.getElementById('pageCalcModal').addEventListener('click', (e) => {
+      if (e.target.id === 'pageCalcModal') {
+        closePageCalculator();
+      }
+    });
+
+    // 滾動時自動更新目前頁碼號碼
+    pdfContainer.addEventListener('scroll', () => {
+      if (!globalPdfDoc || cropState) return;
+      const pageContainers = document.querySelectorAll('.page-container');
+      const containerTop = pdfContainer.getBoundingClientRect().top;
+
+      pageContainers.forEach((el, index) => {
+        const rect = el.getBoundingClientRect();
+        if (rect.top <= containerTop + 150 && rect.bottom >= containerTop + 100) {
+          currentPageNum = index + 1;
+          updatePageDisplay();
+        }
+      });
+    });
+
+    /* --- 選取/平移 (Hand / Selection Mode) 雙重相容性邏輯 (Mouse + Touch) --- */
+    let isPanning = false;
+    let startX = 0, startY = 0;
+    let scrollLeft = 0, scrollTop = 0;
+
+    function getEventClientPos(e) {
+      if (e.touches && e.touches.length > 0) {
+        return { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY };
+      }
+      return { clientX: e.clientX, clientY: e.clientY };
+    }
+
+    function panStart(e) {
+      if (currentMode !== 'hand') return;
+      isPanning = true;
+      const pos = getEventClientPos(e);
+      startX = pos.clientX;
+      startY = pos.clientY;
+      scrollLeft = pdfContainer.scrollLeft;
+      scrollTop = pdfContainer.scrollTop;
+    }
+
+    function panMove(e) {
+      if (!isPanning || currentMode !== 'hand') return;
+      const pos = getEventClientPos(e);
+      const walkX = pos.clientX - startX;
+      const walkY = pos.clientY - startY;
+      pdfContainer.scrollLeft = scrollLeft - walkX;
+      pdfContainer.scrollTop = scrollTop - walkY;
+    }
+
+    function panEnd() {
+      if (currentMode === 'hand') isPanning = false;
+    }
+
+    // 滑鼠事件監聽
+    pdfContainer.addEventListener('mousedown', panStart);
+    pdfContainer.addEventListener('mousemove', panMove);
+    pdfContainer.addEventListener('mouseup', panEnd);
+    pdfContainer.addEventListener('mouseleave', panEnd);
+
+    // 觸控與電子白板事件監聽
+    pdfContainer.addEventListener('touchstart', panStart, { passive: true });
+    pdfContainer.addEventListener('touchmove', panMove, { passive: true });
+    pdfContainer.addEventListener('touchend', panEnd);
+    pdfContainer.addEventListener('touchcancel', panEnd);
+
+    function toggleFullScreen() {
+      const docElm = document.documentElement;
+      if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+        if (docElm.requestFullscreen) docElm.requestFullscreen();
+        else if (docElm.webkitRequestFullscreen) docElm.webkitRequestFullscreen();
+      } else {
+        if (document.exitFullscreen) document.exitFullscreen();
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+      }
+    }
+
+    const updateFsBtnText = () => {
+      const fsText = document.getElementById('fs-text');
+      const fsIcon = document.getElementById('fs-icon');
+      if (document.fullscreenElement || document.webkitFullscreenElement) {
+        fsText.textContent = '退出';
+        fsIcon.textContent = '🗗';
+      } else {
+        fsText.textContent = '全螢幕';
+        fsIcon.textContent = '⛶';
+      }
+    };
+
+    document.addEventListener('fullscreenchange', updateFsBtnText);
+    document.addEventListener('webkitfullscreenchange', updateFsBtnText);
+
+    function updateWidthUI() {
+      if (currentMode === 'eraser') {
+        document.getElementById('width-label-name').textContent = '橡皮擦';
+        lineWidthInput.value = eraserWidth;
+        document.getElementById('width-val').textContent = eraserWidth;
+        eraserCursor.style.width = `${eraserWidth}px`;
+        eraserCursor.style.height = `${eraserWidth}px`;
+      } else {
+        document.getElementById('width-label-name').textContent = '粗細';
+        lineWidthInput.value = penWidth;
+        document.getElementById('width-val').textContent = penWidth;
+      }
+    }
+
+    function updateStatusText(text) {
+      if (text) {
+        statusBar.textContent = text;
+        statusBar.style.display = 'block';
+      } else {
+        statusBar.style.display = 'none';
+      }
+    }
+
+    function setMode(mode, shapeType = '') {
+      if (activeCanvasContext && activeCanvasContext.finalizeActiveShape) {
+        activeCanvasContext.finalizeActiveShape();
+      }
+
+      currentMode = mode;
+      currentShapeType = shapeType;
+      
+      document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+      if (mode === 'pen') document.getElementById('btn-pen').classList.add('active');
+      else if (mode === 'hand') document.getElementById('btn-hand').classList.add('active');
+      else if (mode === 'eraser') document.getElementById('btn-eraser').classList.add('active');
+      else if (mode === 'crop') document.getElementById('btn-crop').classList.add('active');
+      else if (mode === 'compass') document.getElementById('btn-compass').classList.add('active');
+      else if (mode === 'shape') {
+        const targetBtn = document.getElementById(`btn-shape-${shapeType}`);
+        if(targetBtn) targetBtn.classList.add('active');
+      }
+
+      document.querySelectorAll('.side-pen').forEach(b => b.classList.toggle('active', mode === 'pen'));
+      document.querySelectorAll('.side-hand').forEach(b => b.classList.toggle('active', mode === 'hand'));
+      document.querySelectorAll('.side-crop').forEach(b => b.classList.toggle('active', mode === 'crop'));
+      document.querySelectorAll('.side-eraser').forEach(b => b.classList.toggle('active', mode === 'eraser'));
+      document.querySelectorAll('.side-compass').forEach(b => b.classList.toggle('active', mode === 'compass'));
+
+      // 切換 Canvas 穿透性，當在選取模式下允許拖拽 container
+      document.querySelectorAll('.draw-canvas').forEach(canvas => {
+        canvas.style.pointerEvents = (mode === 'hand') ? 'none' : 'auto';
+      });
+
+      pdfContainer.classList.toggle('mode-hand', mode === 'hand');
+
+      if (mode !== 'eraser') eraserCursor.style.display = 'none';
+      if (mode === 'compass') updateStatusText('提示：點擊畫布設定圓心');
+      else if (mode === 'hand') updateStatusText('提示：滑動或拖曳頁面以滾動觀看');
+      else if (mode === 'crop') updateStatusText('提示：在畫布上拖曳框選欲放大的區域');
+      else updateStatusText('');
+
+      updateWidthUI();
+    }
+
+    function undoLastAction() {
+      if (activeCanvasContext && activeCanvasContext.undo) {
+        activeCanvasContext.undo();
+      }
+    }
+
+    function selectColor(color) {
+      currentColor = color;
+      document.querySelectorAll('.color-btn').forEach(btn => {
+        btn.classList.toggle('selected', btn.getAttribute('data-color') === color);
+      });
+      if (currentMode === 'eraser' || currentMode === 'crop' || currentMode === 'hand') setMode('pen');
+    }
+
+    lineWidthInput.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value, 10);
+      if (currentMode === 'eraser') eraserWidth = val;
+      else penWidth = val;
+      updateWidthUI();
+    });
+
+    function handlePointerMove(e) {
+      if (currentMode === 'eraser') {
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        eraserCursor.style.display = 'block';
+        eraserCursor.style.left = `${clientX}px`;
+        eraserCursor.style.top = `${clientY}px`;
+      } else {
+        eraserCursor.style.display = 'none';
+      }
+    }
+
+    document.addEventListener('mousemove', handlePointerMove);
+    document.addEventListener('touchmove', handlePointerMove, { passive: true });
+
+    document.getElementById('file-input').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      penWidth = 4;
+      eraserWidth = 60;
+      updateWidthUI();
+
+      const fileArrayBuffer = await file.arrayBuffer();
+      globalPdfDoc = await pdfjsLib.getDocument(fileArrayBuffer).promise;
+      
+      totalPagesCount = globalPdfDoc.numPages;
+      currentPageNum = 1;
+      updatePageDisplay();
+
+      renderAllPages();
+    });
+
+    window.addEventListener('resize', () => {
+      if (globalPdfDoc && !cropState) renderAllPages();
+      if (cropState) renderCropZoomView();
+    });
+
+    async function renderAllPages() {
+      cropState = null;
+      document.getElementById('zoom-controls').style.display = 'none';
+      const pagesWrapper = document.getElementById('pdf-pages-wrapper');
+      pagesWrapper.innerHTML = '';
+      for (let pageNum = 1; pageNum <= globalPdfDoc.numPages; pageNum++) {
+        await renderPage(globalPdfDoc, pageNum, pagesWrapper);
+      }
+    }
+
+    async function renderPage(pdfDoc, pageNum, container) {
+      const page = await pdfDoc.getPage(pageNum);
+      const containerWidth = Math.max(300, document.getElementById('pdf-viewer-container').clientWidth - 20);
+      const unscaledViewport = page.getViewport({ scale: 1.0 });
+      const fitScale = containerWidth / unscaledViewport.width;
+      const viewport = page.getViewport({ scale: fitScale });
+
+      const totalHeight = viewport.height + extraMargin;
+
+      const pageContainer = document.createElement('div');
+      pageContainer.className = 'page-container';
+      pageContainer.id = `pdf-page-container-${pageNum}`;
+      pageContainer.style.width = `${viewport.width}px`;
+      pageContainer.style.height = `${totalHeight}px`;
+
+      const pdfCanvas = document.createElement('canvas');
+      pdfCanvas.className = 'pdf-canvas';
+      pdfCanvas.width = viewport.width;
+      pdfCanvas.height = totalHeight;
+      const pdfCtx = pdfCanvas.getContext('2d');
+
+      pdfCtx.fillStyle = '#ffffff';
+      pdfCtx.fillRect(0, 0, pdfCanvas.width, pdfCanvas.height);
+
+      await page.render({ canvasContext: pdfCtx, viewport }).promise;
+
+      pdfCtx.strokeStyle = '#e4e7ed';
+      pdfCtx.lineWidth = 1;
+      pdfCtx.beginPath();
+      pdfCtx.moveTo(0, viewport.height);
+      pdfCtx.lineTo(viewport.width, viewport.height);
+      pdfCtx.stroke();
+
+      const drawCanvas = document.createElement('canvas');
+      drawCanvas.className = 'draw-canvas';
+      drawCanvas.width = viewport.width;
+      drawCanvas.height = totalHeight;
+
+      if (currentMode === 'hand') {
+        drawCanvas.style.pointerEvents = 'none';
+      }
+
+      initDrawingEvents(drawCanvas, pdfCanvas, page, fitScale);
+
+      pageContainer.appendChild(pdfCanvas);
+      pageContainer.appendChild(drawCanvas);
+      container.appendChild(pageContainer);
+    }
+
+    function initDrawingEvents(canvas, sourcePdfCanvas, pageObj = null, originalScale = 1.0) {
+      const ctx = canvas.getContext('2d');
+      let isDrawing = false;
+      let holdTimer = null;
+      let strokePoints = [];
+      let isLineMode = false;
+      let activeLine = null;
+      let activeTriangle = null;
+      let draggingVertexIndex = -1;
+
+      let startPos = null;
+      let tempCanvasData = null;
+      let savedCanvasBeforePreview = null;
+
+      let historyStack = [];
+      const MAX_HISTORY = 30;
+
+      function checkAndExtendCanvasHeight(currentY) {
+        const threshold = 180;
+        const extendAmount = 600;
+        if (currentY > canvas.height - threshold) {
+          const oldHeight = canvas.height;
+          const newHeight = oldHeight + extendAmount;
+
+          const pageContainer = canvas.parentElement;
+          if (pageContainer) {
+            pageContainer.style.height = `${newHeight}px`;
+          }
+
+          const pdfCanvas = pageContainer ? pageContainer.querySelector('.pdf-canvas') : null;
+          if (pdfCanvas) {
+            const pCtx = pdfCanvas.getContext('2d');
+            const pdfData = pCtx.getImageData(0, 0, pdfCanvas.width, oldHeight);
+            pdfCanvas.height = newHeight;
+            pCtx.fillStyle = '#ffffff';
+            pCtx.fillRect(0, 0, pdfCanvas.width, newHeight);
+            pCtx.putImageData(pdfData, 0, 0);
+          }
+
+          const drawData = ctx.getImageData(0, 0, canvas.width, oldHeight);
+          canvas.height = newHeight;
+          ctx.putImageData(drawData, 0, 0);
+
+          if (tempCanvasData) {
+            tempCanvasData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          }
+          if (cropState) {
+            cropState.extraNoteHeight += extendAmount;
+          }
+        }
+      }
+
+      function saveHistory() {
+        if (historyStack.length >= MAX_HISTORY) historyStack.shift();
+        historyStack.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+      }
+
+      function undo() {
+        if (activeTriangle || activeLine) {
+          finalizeActiveShape();
+        }
+        if (historyStack.length > 0) {
+          const previousState = historyStack.pop();
+          ctx.putImageData(previousState, 0, 0);
+        }
+      }
+
+      function getPos(e) {
+        const rect = canvas.getBoundingClientRect();
+        let clientX = 0, clientY = 0;
+
+        if (e.touches && e.touches.length > 0) {
+          clientX = e.touches[0].clientX; clientY = e.touches[0].clientY;
+        } else if (e.changedTouches && e.changedTouches.length > 0) {
+          clientX = e.changedTouches[0].clientX; clientY = e.changedTouches[0].clientY;
+        } else {
+          clientX = e.clientX; clientY = e.clientY;
+        }
+        return { x: clientX - rect.left, y: clientY - rect.top };
+      }
+
+      function redrawBase() {
+        if (tempCanvasData) {
+          ctx.putImageData(tempCanvasData, 0, 0);
+        }
+      }
+
+      function renderActiveTriangleWithHandles() {
+        if (!activeTriangle) return;
+        redrawBase();
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(activeTriangle.p1.x, activeTriangle.p1.y);
+        ctx.lineTo(activeTriangle.p2.x, activeTriangle.p2.y);
+        ctx.lineTo(activeTriangle.p3.x, activeTriangle.p3.y);
+        ctx.closePath();
+        ctx.strokeStyle = activeTriangle.color;
+        ctx.lineWidth = activeTriangle.width;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+
+        ctx.fillStyle = '#409eff';
+        [activeTriangle.p1, activeTriangle.p2, activeTriangle.p3].forEach(p => {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 10, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        });
+        ctx.restore();
+      }
+
+      function renderActiveLineWithHandle() {
+        if (!activeLine) return;
+        redrawBase();
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(activeLine.start.x, activeLine.start.y);
+        ctx.lineTo(activeLine.end.x, activeLine.end.y);
+        ctx.strokeStyle = activeLine.color;
+        ctx.lineWidth = activeLine.width;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+
+        ctx.fillStyle = '#409eff';
+        ctx.beginPath();
+        ctx.arc(activeLine.start.x, activeLine.start.y, 8, 0, Math.PI * 2);
+        ctx.arc(activeLine.end.x, activeLine.end.y, 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      function finalizeActiveShape() {
+        if (activeTriangle) {
+          redrawBase();
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(activeTriangle.p1.x, activeTriangle.p1.y);
+          ctx.lineTo(activeTriangle.p2.x, activeTriangle.p2.y);
+          ctx.lineTo(activeTriangle.p3.x, activeTriangle.p3.y);
+          ctx.closePath();
+          ctx.strokeStyle = activeTriangle.color;
+          ctx.lineWidth = activeTriangle.width;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.stroke();
+          ctx.restore();
+          activeTriangle = null;
+        }
+
+        if (activeLine) {
+          redrawBase();
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(activeLine.start.x, activeLine.start.y);
+          ctx.lineTo(activeLine.end.x, activeLine.end.y);
+          ctx.strokeStyle = activeLine.color;
+          ctx.lineWidth = activeLine.width;
+          ctx.lineCap = 'round';
+          ctx.stroke();
+          ctx.restore();
+          activeLine = null;
+        }
+      }
+
+      let compassStep = 0;
+      let compassCenter = null;
+      let compassRadiusPx = 0;
+      let compassStartAngle = 0;
+      let compassCurrentAngle = 0;
+
+      function handleCompassClick(pos) {
+        if (compassStep === 0) {
+          saveHistory();
+          compassCenter = pos;
+          compassStep = 1;
+          savedCanvasBeforePreview = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          updateStatusText('提示：滑動調整半徑，再次點擊鎖定半徑');
+        } else if (compassStep === 1) {
+          const dx = pos.x - compassCenter.x;
+          const dy = pos.y - compassCenter.y;
+          compassRadiusPx = Math.hypot(dx, dy);
+          if (compassRadiusPx < 5) return;
+
+          compassStartAngle = Math.atan2(dy, dx);
+          compassCurrentAngle = compassStartAngle;
+          compassStep = 2;
+          updateStatusText('提示：旋轉畫出圓弧，再次點擊完成');
+        } else if (compassStep === 2) {
+          if (savedCanvasBeforePreview) {
+            ctx.putImageData(savedCanvasBeforePreview, 0, 0);
+          }
+          
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(compassCenter.x, compassCenter.y, compassRadiusPx, compassStartAngle, compassCurrentAngle, isCounterClockwise(compassStartAngle, compassCurrentAngle));
+          ctx.strokeStyle = currentColor;
+          ctx.lineWidth = penWidth;
+          ctx.lineCap = 'round';
+          ctx.stroke();
+          ctx.restore();
+
+          compassStep = 0;
+          compassCenter = null;
+          savedCanvasBeforePreview = null;
+          updateStatusText('提示：點擊畫布設定圓心');
+        }
+      }
+
+      function startDrawing(e) {
+        if (currentMode === 'hand') return;
+        activeCanvasContext = { undo, finalizeActiveShape };
+        if (e.type === 'touchstart' && e.cancelable) e.preventDefault();
+        const pos = getPos(e);
+
+        if (currentMode === 'compass') {
+          handleCompassClick(pos);
+          return;
+        }
+
+        if (activeTriangle) {
+          const pts = [activeTriangle.p1, activeTriangle.p2, activeTriangle.p3];
+          for (let i = 0; i < pts.length; i++) {
+            if (Math.hypot(pos.x - pts[i].x, pos.y - pts[i].y) < 22) {
+              draggingVertexIndex = i;
+              isDrawing = true;
+              return;
+            }
+          }
+        }
+
+        finalizeActiveShape();
+        saveHistory();
+
+        isDrawing = true;
+        isLineMode = false;
+        startPos = pos;
+        tempCanvasData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y);
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = (currentMode === 'eraser') ? eraserWidth : penWidth;
+
+        if (currentMode === 'pen' || currentMode === 'eraser') {
+          strokePoints = [pos];
+          ctx.globalCompositeOperation = currentMode === 'eraser' ? 'destination-out' : 'source-over';
+          ctx.strokeStyle = currentColor;
+
+          if (currentMode === 'pen') {
+            holdTimer = setTimeout(() => {
+              if (isDrawing) {
+                isLineMode = true;
+                activeLine = {
+                  start: { ...strokePoints[0] },
+                  end: { ...pos },
+                  color: currentColor,
+                  width: penWidth
+                };
+                renderActiveLineWithHandle();
+              }
+            }, 1000);
+          }
+        } else if (currentMode === 'shape' || currentMode === 'crop') {
+          ctx.globalCompositeOperation = 'source-over';
+          ctx.strokeStyle = currentMode === 'crop' ? '#409eff' : currentColor;
+          ctx.lineWidth = currentMode === 'crop' ? 2 : penWidth;
+        }
+      }
+
+      function draw(e) {
+        if (currentMode === 'hand') return;
+        const pos = getPos(e);
+
+        if (currentMode === 'compass') {
+          if (compassStep === 1) {
+            const dx = pos.x - compassCenter.x;
+            const dy = pos.y - compassCenter.y;
+            compassRadiusPx = Math.hypot(dx, dy);
+
+            if (savedCanvasBeforePreview) {
+              ctx.putImageData(savedCanvasBeforePreview, 0, 0);
+            }
+            drawDashedLine(ctx, compassCenter.x, compassCenter.y, pos.x, pos.y);
+            drawPhotoStyleCompass(ctx, compassCenter, pos, (compassRadiusPx / PX_PER_CM).toFixed(1));
+          } else if (compassStep === 2) {
+            const dx = pos.x - compassCenter.x;
+            const dy = pos.y - compassCenter.y;
+            compassCurrentAngle = Math.atan2(dy, dx);
+
+            const pencilX = compassCenter.x + compassRadiusPx * Math.cos(compassCurrentAngle);
+            const pencilY = compassCenter.y + compassRadiusPx * Math.sin(compassCurrentAngle);
+
+            if (savedCanvasBeforePreview) {
+              ctx.putImageData(savedCanvasBeforePreview, 0, 0);
+            }
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(compassCenter.x, compassCenter.y, compassRadiusPx, compassStartAngle, compassCurrentAngle, isCounterClockwise(compassStartAngle, compassCurrentAngle));
+            ctx.strokeStyle = currentColor;
+            ctx.lineWidth = penWidth;
+            ctx.stroke();
+            ctx.restore();
+
+            drawPhotoStyleCompass(ctx, compassCenter, { x: pencilX, y: pencilY }, (compassRadiusPx / PX_PER_CM).toFixed(1));
+          }
+          return;
+        }
+
+        if (!isDrawing) return;
+        if (e.type === 'touchmove' && e.cancelable) e.preventDefault();
+
+        checkAndExtendCanvasHeight(pos.y);
+
+        if (draggingVertexIndex !== -1 && activeTriangle) {
+          if (draggingVertexIndex === 0) activeTriangle.p1 = pos;
+          else if (draggingVertexIndex === 1) activeTriangle.p2 = pos;
+          else if (draggingVertexIndex === 2) activeTriangle.p3 = pos;
+          renderActiveTriangleWithHandles();
+          return;
+        }
+
+        if (isLineMode && activeLine) {
+          activeLine.end = pos;
+          renderActiveLineWithHandle();
+          return;
+        }
+
+        if (currentMode === 'pen' || currentMode === 'eraser') {
+          strokePoints.push(pos);
+          ctx.lineTo(pos.x, pos.y);
+          ctx.stroke();
+        } else if ((currentMode === 'shape' || currentMode === 'crop') && startPos && tempCanvasData) {
+          ctx.putImageData(tempCanvasData, 0, 0);
+          if (currentMode === 'crop') {
+            ctx.save();
+            ctx.setLineDash([6, 6]);
+            ctx.strokeRect(startPos.x, startPos.y, pos.x - startPos.x, pos.y - startPos.y);
+            ctx.restore();
+          } else {
+            drawShapePreview(ctx, startPos, pos, currentShapeType, penWidth);
+          }
+        }
+      }
+
+      function stopDrawing(e) {
+        if (currentMode === 'hand') return;
+        if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+        if (!isDrawing) return;
+
+        const pos = getPos(e);
+        isDrawing = false;
+
+        checkAndExtendCanvasHeight(pos.y);
+
+        if (draggingVertexIndex !== -1) {
+          draggingVertexIndex = -1;
+          return;
+        }
+
+        if (isLineMode && activeLine) {
+          activeLine.end = pos;
+          renderActiveLineWithHandle();
+          return;
+        }
+
+        if (currentMode === 'shape' && (currentShapeType === 'triangle' || currentShapeType === 'rtriangle') && startPos) {
+          const w = pos.x - startPos.x;
+          const h = pos.y - startPos.y;
+
+          if (currentShapeType === 'triangle') {
+            activeTriangle = {
+              p1: { x: startPos.x + w / 2, y: startPos.y },
+              p2: { x: startPos.x, y: startPos.y + h },
+              p3: { x: startPos.x + w, y: startPos.y + h },
+              color: currentColor,
+              width: penWidth
+            };
+          } else {
+            activeTriangle = {
+              p1: { x: startPos.x, y: startPos.y },
+              p2: { x: startPos.x, y: startPos.y + h },
+              p3: { x: startPos.x + w, y: startPos.y + h },
+              color: currentColor,
+              width: penWidth
+            };
+          }
+          renderActiveTriangleWithHandles();
+          return;
+        }
+
+        if (currentMode === 'crop' && startPos) {
+          ctx.putImageData(tempCanvasData, 0, 0);
+          const width = Math.abs(pos.x - startPos.x);
+          const height = Math.abs(pos.y - startPos.y);
+          const cropX = Math.min(startPos.x, pos.x);
+          const cropY = Math.min(startPos.y, pos.y);
+
+          if (width > 20 && height > 20) {
+            initCropZoomView(sourcePdfCanvas, canvas, cropX, cropY, width, height, pageObj, originalScale);
+          }
+        }
+      }
+
+      canvas.addEventListener('mousedown', startDrawing);
+      canvas.addEventListener('mousemove', draw);
+      canvas.addEventListener('mouseup', stopDrawing);
+      canvas.addEventListener('mouseleave', stopDrawing);
+
+      canvas.addEventListener('touchstart', startDrawing, { passive: false });
+      canvas.addEventListener('touchmove', draw, { passive: false });
+      canvas.addEventListener('touchend', stopDrawing, { passive: false });
+    }
+
+    function drawPhotoStyleCompass(ctx, pivot, pencil, cmText) {
+      const midX = (pivot.x + pencil.x) / 2;
+      const midY = (pivot.y + pencil.y) / 2;
+      const dist = Math.hypot(pencil.x - pivot.x, pencil.y - pivot.y);
+      const height = Math.max(80, dist * 0.85);
+
+      const angle = Math.atan2(pencil.y - pivot.y, pencil.x - pivot.x);
+      const topX = midX - height * Math.sin(angle);
+      const topY = midY + height * Math.cos(angle);
+
+      ctx.save();
+      ctx.lineWidth = 10;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#B2D8C9';
+
+      ctx.beginPath();
+      ctx.moveTo(topX, topY);
+      ctx.lineTo(pivot.x, pivot.y);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(topX, topY);
+      ctx.lineTo(pencil.x, pencil.y);
+      ctx.stroke();
+
+      ctx.fillStyle = '#EE535C';
+      ctx.beginPath();
+      ctx.arc(topX, topY, 14, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#6A7BB8';
+      ctx.beginPath();
+      ctx.arc(topX, topY - 18, 6, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#F4DC42';
+      ctx.beginPath();
+      ctx.arc(topX, topY, 5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#606060';
+      ctx.beginPath();
+      ctx.moveTo(pivot.x, pivot.y);
+      ctx.lineTo(pivot.x + 4 * Math.cos(angle + Math.PI/2), pivot.y + 4 * Math.sin(angle + Math.PI/2));
+      ctx.stroke();
+
+      ctx.save();
+      ctx.translate(pencil.x, pencil.y);
+      ctx.rotate(angle);
+
+      ctx.fillStyle = '#5885AF';
+      ctx.beginPath();
+      ctx.arc(0, -10, 10, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#F4DC42';
+      ctx.beginPath();
+      ctx.arc(0, -10, 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#E88B23';
+      ctx.fillRect(-8, -32, 16, 22);
+
+      ctx.fillStyle = '#F8D1B1';
+      ctx.beginPath();
+      ctx.moveTo(-8, -10);
+      ctx.lineTo(8, -10);
+      ctx.lineTo(0, 5);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = '#333333';
+      ctx.beginPath();
+      ctx.moveTo(-3, -3);
+      ctx.lineTo(3, -3);
+      ctx.lineTo(0, 5);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.restore();
+
+      const labelX = (pivot.x + pencil.x) / 2;
+      const labelY = (pivot.y + pencil.y) / 2 - 18;
+
+      ctx.font = 'bold 13px sans-serif';
+      const textWidth = ctx.measureText(`${cmText} cm`).width;
+
+      ctx.fillStyle = 'rgba(238, 83, 92, 0.95)';
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(labelX - textWidth / 2 - 8, labelY - 14, textWidth + 16, 22, 11);
+      } else {
+        ctx.rect(labelX - textWidth / 2 - 8, labelY - 14, textWidth + 16, 22);
+      }
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.fillText(`${cmText} cm`, labelX, labelY + 2);
+
+      ctx.restore();
+    }
+
+    function drawDashedLine(ctx, x1, y1, x2, y2) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.setLineDash([4, 4]);
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.strokeStyle = '#EE535C';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function isCounterClockwise(start, end) {
+      let diff = end - start;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      return diff < 0;
+    }
+
+    function drawShapePreview(ctx, start, end, type, width) {
+      ctx.beginPath();
+      ctx.lineWidth = width;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      const w = end.x - start.x;
+      const h = end.y - start.y;
+
+      switch (type) {
+        case 'line': ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); break;
+        case 'rect': ctx.strokeRect(start.x, start.y, w, h); break;
+        case 'circle': 
+          const radius = Math.hypot(w, h);
+          ctx.arc(start.x, start.y, radius, 0, Math.PI * 2);
+          break;
+        case 'triangle': 
+          ctx.moveTo(start.x + w/2, start.y); 
+          ctx.lineTo(start.x, start.y + h); 
+          ctx.lineTo(start.x + w, start.y + h); 
+          ctx.closePath(); 
+          break;
+        case 'rtriangle': 
+          ctx.moveTo(start.x, start.y); 
+          ctx.lineTo(start.x, start.y + h); 
+          ctx.lineTo(start.x + w, start.y + h); 
+          ctx.closePath(); 
+          break;
+      }
+      ctx.stroke();
+    }
+
+    function initCropZoomView(sourcePdfCanvas, currentDrawCanvas, cropX, cropY, cropW, cropH, pageObj, originalScale) {
+      cropState = {
+        sourcePdfCanvas,
+        currentDrawCanvas,
+        cropX, cropY, cropW, cropH,
+        pageObj,
+        originalScale,
+        zoomScale: 1.0,
+        extraNoteHeight: 600
+      };
+
+      document.getElementById('zoom-controls').style.display = 'flex';
+      setMode('pen');
+      renderCropZoomView();
+    }
+
+    function adjustCropZoom(delta) {
+      if (!cropState) return;
+      let newScale = cropState.zoomScale + delta;
+      if (newScale < 0.3) newScale = 0.3;
+      if (newScale > 5.0) newScale = 5.0;
+      cropState.zoomScale = newScale;
+      document.getElementById('zoom-text').textContent = `${Math.round(newScale * 100)}%`;
+      renderCropZoomView();
+    }
+
+    async function renderCropZoomView() {
+      if (!cropState) return;
+
+      const wrapper = document.getElementById('pdf-pages-wrapper');
+      wrapper.innerHTML = '';
+
+      const screenWidth = document.getElementById('pdf-viewer-container').clientWidth;
+      const containerWidth = Math.max(300, screenWidth - 20);
+
+      const scaledImgWidth = containerWidth * 0.85 * cropState.zoomScale;
+      const baseRatio = scaledImgWidth / cropState.cropW;
+      const scaledImgHeight = cropState.cropH * baseRatio;
+
+      const totalCanvasHeight = scaledImgHeight + cropState.extraNoteHeight;
+
+      const pageContainer = document.createElement('div');
+      pageContainer.className = 'page-container';
+      pageContainer.style.width = `${containerWidth}px`;
+      pageContainer.style.height = `${totalCanvasHeight}px`;
+
+      const pdfCanvas = document.createElement('canvas');
+      pdfCanvas.className = 'pdf-canvas';
+      pdfCanvas.width = containerWidth;
+      pdfCanvas.height = totalCanvasHeight;
+      const pdfCtx = pdfCanvas.getContext('2d');
+
+      pdfCtx.fillStyle = '#ffffff';
+      pdfCtx.fillRect(0, 0, pdfCanvas.width, pdfCanvas.height);
+
+      const imgOffsetX = (containerWidth - scaledImgWidth) / 2;
+
+      if (cropState.pageObj) {
+        const zoomFactor = baseRatio;
+        const newScale = cropState.originalScale * zoomFactor;
+        const renderViewport = cropState.pageObj.getViewport({ scale: newScale });
+
+        const offscreenCanvas = document.createElement('canvas');
+        offscreenCanvas.width = renderViewport.width;
+        offscreenCanvas.height = renderViewport.height;
+        const offscreenCtx = offscreenCanvas.getContext('2d');
+
+        await cropState.pageObj.render({ canvasContext: offscreenCtx, viewport: renderViewport }).promise;
+
+        pdfCtx.drawImage(
+          offscreenCanvas,
+          cropState.cropX * zoomFactor, cropState.cropY * zoomFactor, cropState.cropW * zoomFactor, cropState.cropH * zoomFactor,
+          imgOffsetX, 0, scaledImgWidth, scaledImgHeight
+        );
+      } else {
+        pdfCtx.drawImage(
+          cropState.sourcePdfCanvas,
+          cropState.cropX, cropState.cropY, cropState.cropW, cropState.cropH,
+          imgOffsetX, 0, scaledImgWidth, scaledImgHeight
+        );
+      }
+
+      pdfCtx.strokeStyle = '#e4e7ed';
+      pdfCtx.lineWidth = 1;
+      pdfCtx.beginPath();
+      pdfCtx.moveTo(0, scaledImgHeight);
+      pdfCtx.lineTo(containerWidth, scaledImgHeight);
+      pdfCtx.stroke();
+
+      const drawCanvas = document.createElement('canvas');
+      drawCanvas.className = 'draw-canvas';
+      drawCanvas.width = containerWidth;
+      drawCanvas.height = totalCanvasHeight;
+
+      if (currentMode === 'hand') {
+        drawCanvas.style.pointerEvents = 'none';
+      }
+
+      const drawCtx = drawCanvas.getContext('2d');
+      drawCtx.drawImage(
+        cropState.currentDrawCanvas,
+        cropState.cropX, cropState.cropY, cropState.cropW, cropState.cropH,
+        imgOffsetX, 0, scaledImgWidth, scaledImgHeight
+      );
+
+      initDrawingEvents(drawCanvas, pdfCanvas, cropState.pageObj, cropState.originalScale);
+
+      pageContainer.appendChild(pdfCanvas);
+      pageContainer.appendChild(drawCanvas);
+      wrapper.appendChild(pageContainer);
+    }
+
+    function resetCropView() {
+      cropState = null;
+      if (globalPdfDoc) renderAllPages();
+    }
+  </script>
+</body>
+</html>
