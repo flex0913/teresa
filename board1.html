@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>專業 PDF 標註工具 - 高解析度框選放大與無限延伸畫布</title>
+  <!-- 引入 PDF.js CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    * { 
+      box-sizing: border-box; 
+      margin: 0; 
+      padding: 0; 
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overscroll-behavior: none;
+      overflow: hidden;
+    }
+
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
+      display: flex; 
+      flex-direction: column; 
+      background: #f0f2f5; 
+    }
+
+    /* 全螢幕頂部列 */
+    #top-bar {
+      min-height: 60px;
+      height: 85px;
+      background: #1e1e1e;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      z-index: 1001;
+      flex-shrink: 0;
+    }
+
+    .brand-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-title {
+      font-size: 33px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+    }
+
+    /* 彩色標題個別字體色彩設定 */
+    .brand-title .char-de { color: #ff4d4f; }
+    .brand-title .char-lei { color: #40a9ff; }
+    .brand-title .char-sha { color: #ffec3d; }
+    .brand-title .char-wen { color: #73d13d; }
+    .brand-title .char-li { color: #ff9c6e; }
+
+    @media (min-width: 600px) {
+      .brand-title {
+        font-size: 42px;
+        letter-spacing: 2px;
+      }
+    }
+
+    .fullscreen-btn {
+      background: #409eff;
+      color: #fff;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: bold;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.2s;
+      white-space: nowrap;
+    }
+    .fullscreen-btn:hover { background: #66b1ff; }
+
+    /* 上方工具列 (內容置中) */
+    #toolbar {
+      height: 65px;
+      background: #ffffff;
+      border-bottom: 1px solid #dcdfe6;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 0 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+      z-index: 1000;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      flex-shrink: 0;
+    }
+
+    #toolbar::-webkit-scrollbar { display: none; }
+    #toolbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+    .tool-group { 
+      display: flex; 
+      align-items: center; 
+      gap: 4px; 
+      border-right: 1px solid #dcdfe6; 
+      padding-right: 8px; 
+      margin-right: 2px; 
+      flex-shrink: 0;
+    }
+    .tool-group:last-child { border-right: none; padding-right: 0; margin-right: 0; }
+    .tool-group label { font-size: 13px; color: #606266; white-space: nowrap; }
+
+    .tool-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 4px 6px;
+      border: 1px solid transparent;
+      background: transparent;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s, transform 0.1s;
+      min-width: 48px;
+    }
+    .tool-btn:hover { background: #f2f6fc; }
+    .tool-btn.active { background: #ecf5ff; border-color: #409eff; color: #409eff; }
+    
+    .tool-icon { font-size: 18px; margin-bottom: 2px; display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; }
+    .tool-text { font-size: 11px; font-weight: 500; color: #303133; white-space: nowrap; }
+
+    /* 精緻向量圖示通用類別 */
+    .svg-tool-icon {
+      width: 22px;
+      height: 22px;
+      display: inline-block;
+    }
+
+    .svg-undo-icon {
+      width: 20px;
+      height: 20px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2.2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    /* 兩側浮動工具列 */
+    .side-panel {
+      position: fixed;
+      top: 55%;
+      transform: translateY(-50%);
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid #dcdfe6;
+      border-radius: 24px;
+      padding: 8px 5px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      z-index: 2000;
+      backdrop-filter: blur(5px);
+    }
+    #side-panel-left { left: 8px; }
+    #side-panel-right { right: 8px; }
+
+    .side-tool-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      background: #f4f4f5;
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      user-select: none;
+      color: #303133;
+    }
+    .side-tool-btn:active { transform: scale(0.95); }
+    .side-tool-btn.active {
+      background: #ecf5ff;
+      border-color: #409eff;
+      box-shadow: 0 0 0 2px rgba(64,158,255,0.3);
+      color: #409eff;
+    }
+
+    .side-color-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding-top: 4px;
+      border-top: 1px solid #e4e7ed;
+    }
+
+    .color-btn {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      border: 2px solid #ffffff;
+      box-shadow: 0 0 0 1.5px #dcdfe6;
+      cursor: pointer;
+      transition: transform 0.2s;
+      flex-shrink: 0;
+    }
+    .color-btn.selected { transform: scale(1.25); box-shadow: 0 0 0 2px #409eff; }
+
+    /* 側邊欄頁碼按鈕樣式 */
+    .side-page-btn {
+      margin-top: 4px;
+      padding-top: 6px;
+      border-top: 1px solid #e4e7ed;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      background: #409eff;
+      color: #ffffff;
+      border-radius: 12px;
+      padding: 6px 4px;
+      width: 40px;
+      box-shadow: 0 2px 6px rgba(64,158,255,0.3);
+      transition: transform 0.15s, background 0.2s;
+    }
+    .side-page-btn:hover { background: #66b1ff; }
+    .side-page-btn:active { transform: scale(0.95); }
+    .side-page-btn .page-icon { font-size: 11px; margin-bottom: 1px; }
+    .side-page-btn .page-num-text { font-size: 10px; font-weight: bold; line-height: 1.1; white-space: nowrap; }
+
+    /* 計算機 Modal 樣式 */
+    .page-modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.45);
+      backdrop-filter: blur(3px);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+    }
+
+    .page-calc-card {
+      background: #ffffff;
+      padding: 20px;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+      width: 280px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      animation: modalFadeIn 0.2s ease-out;
+    }
+
+    @keyframes modalFadeIn {
+      from { opacity: 0; transform: scale(0.9); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    .calc-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 15px;
+      font-weight: bold;
+      color: #303133;
+    }
+
+    .calc-display {
+      width: 100%;
+      height: 45px;
+      font-size: 1.4rem;
+      font-weight: bold;
+      text-align: right;
+      padding: 0 12px;
+      border: 1px solid #dcdfe6;
+      border-radius: 8px;
+      background: #f8f9fa;
+      color: #303133;
+      outline: none;
+    }
+
+    .calc-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .calc-key {
+      height: 45px;
+      font-size: 1.2rem;
+      font-weight: 600;
+      border: 1px solid #dcdfe6;
+      background: #ffffff;
+      color: #303133;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s, transform 0.05s;
+    }
+    .calc-key:active { transform: scale(0.96); background: #f2f6fc; }
+    .calc-key.btn-clear { background: #fef0f0; color: #f56c6c; border-color: #fde2e2; }
+    .calc-key.btn-clear:active { background: #fde2e2; }
+    .calc-key.btn-back { background: #f4f4f5; color: #909399; }
+    
+    .calc-confirm-btn {
+      width: 100%;
+      height: 42px;
+      background: #409eff;
+      color: #ffffff;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .calc-confirm-btn:hover { background: #66b1ff; }
+    .calc-confirm-btn:active { transform: scale(0.98); }
+
+    /* PDF 與畫布區域 */
+    #pdf-viewer-container {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: auto;
+      padding: 10px 0;
+      background: #f0f2f5;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      position: relative;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-x pan-y;
+    }
+
+    /* 抓取滑動時的游標樣式 */
+    #pdf-viewer-container.mode-hand {
+      cursor: grab;
+      touch-action: pan-x pan-y;
+    }
+    #pdf-viewer-container.mode-hand:active {
+      cursor: grabbing;
+    }
+
+    #pdf-pages-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 15px;
+      width: 100%;
+    }
+
+    .page-container {
+      position: relative;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+      background: #ffffff;
+      border-radius: 4px;
+      margin: 0 auto;
+      touch-action: none;
+    }
+    .pdf-canvas { display: block; background: #ffffff; }
+    .draw-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      cursor: crosshair;
+      touch-action: none;
+    }
+
+    /* 橡皮擦跟隨圓圈 */
+    #eraser-cursor {
+      position: absolute;
+      border: 1px solid #ff4d4f;
+      background: rgba(255, 77, 79, 0.2);
+      border-radius: 50%;
+      pointer-events: none;
+      display: none;
+      z-index: 9999;
+      transform: translate(-50%, -50%);
+    }
+
+    /* 縮放與控制面板 */
+    #zoom-controls {
+      position: fixed;
+      bottom: 15px;
+      right: 15px;
+      display: none;
+      gap: 8px;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 6px 12px;
+      border-radius: 30px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+      z-index: 2000;
+    }
+    
+    .zoom-btn {
+      background: #f4f4f5;
+      border: 1px solid #dcdfe6;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #btn-reset-crop {
+      padding: 5px 12px;
+      background: #409eff;
+      color: #fff;
+      border: none;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: bold;
+    }
+
+    /* 提示訊息浮條 */
+    #status-bar {
+      position: fixed;
+      bottom: 15px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(30, 30, 30, 0.88);
+      color: #fff;
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-size: 12px;
+      display: none;
+      z-index: 3000;
+      backdrop-filter: blur(4px);
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 頂部列 -->
+  <div id="top-bar">
+    <div class="brand-container">
+      <span class="brand-title">
+        <span class="char-de">德</span><span class="char-lei">蕾</span><span class="char-sha">莎</span><span class="char-wen">文</span><span class="char-li">理</span>
+      </span>
+    </div>
+
+    <button class="fullscreen-btn" id="btn-fullscreen" onclick="toggleFullScreen()">
+      <span id="fs-icon">⛶</span> <span id="fs-text">全螢幕</span>
+    </button>
+  </div>
+
+  <!-- SVG 可愛風格圖示模板庫 -->
+  <svg style="display: none;">
+    <!-- 鼠標游標圖示 (Mouse Cursor / Pointer) -->
+    <g id="custom-cursor-svg">
+      <path d="M 25 15 L 25 110 L 50 85 L 70 120 L 85 110 L 65 75 L 100 75 Z" fill="#409EFF" stroke="#FFFFFF" stroke-width="8" stroke-linejoin="round" stroke-linecap="round"/>
+      <path d="M 25 15 L 25 110 L 50 85 L 70 120 L 85 110 L 65 75 L 100 75 Z" fill="#409EFF"/>
+    </g>
+
+    <!-- 圓規圖示 -->
+    <g id="custom-compass-svg">
+      <rect x="42" y="5" width="16" height="20" rx="8" fill="#6A7BB8"/>
+      <path d="M 30,25 L 70,25 Q 70,25 70,55 L 50,70 L 30,55 Z" fill="#EE535C"/>
+      <circle cx="50" cy="40" r="8" fill="#F4DC42"/>
+      <path d="M 32,55 L 43,120 L 51,120 L 45,55 Z" fill="#B2D8C9"/>
+      <path d="M 55,55 L 65,120 L 55,120 L 48,55 Z" fill="#B2D8C9"/>
+      <polygon points="63,120 65,135 58,120" fill="#606060"/>
+      <circle cx="37" cy="100" r="14" fill="#5885AF"/>
+      <circle cx="37" cy="100" r="4" fill="#F4DC42"/>
+      <rect x="18" y="70" width="16" height="40" rx="3" fill="#E88B23"/>
+      <polygon points="18,110 34,110 26,128" fill="#F8D1B1"/>
+      <polygon points="23,121 29,121 26,128" fill="#333333"/>
+    </g>
+
+    <!-- 畫筆圖示（可愛粉紅馬卡龍配色） -->
+    <g id="custom-pen-svg">
+      <path d="M 30 110 L 45 125 L 125 45 C 130 40 130 30 125 25 L 115 15 C 110 10 100 10 95 15 Z" fill="#FF85C0"/>
+      <path d="M 100 20 L 120 40 L 110 50 L 90 30 Z" fill="#FFADD2"/>
+      <polygon points="30,110 45,125 15,135" fill="#FFE7BA"/>
+      <polygon points="20,125 25,130 15,135" fill="#595959"/>
+      <line x1="45" y1="95" x2="105" y2="35" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" opacity="0.8"/>
+    </g>
+
+    <!-- 蜻蜓牌 (MONO) 配色橡皮擦圖示（方向朝左、淡藍色） -->
+    <g id="custom-eraser-svg">
+      <g transform="rotate(22 70 70)">
+        <rect x="20" y="32" width="95" height="70" rx="8" fill="#FAFAFA" stroke="#E8E8E8" stroke-width="2"/>
+        <rect x="45" y="32" width="70" height="70" rx="4" fill="#66B1FF"/>
+        <rect x="45" y="55" width="70" height="24" fill="#FFFFFF"/>
+        <rect x="45" y="79" width="70" height="23" rx="4" fill="#222222"/>
+        <rect x="52" y="64" width="14" height="6" rx="1" fill="#222222"/>
+        <path d="M 45 32 Q 40 67 45 102" fill="none" stroke="#FFFFFF" stroke-width="2"/>
+      </g>
+    </g>
+
+    <!-- 框選放大圖示 (可愛放大鏡) -->
+    <g id="custom-crop-svg">
+      <circle cx="55" cy="55" r="38" fill="none" stroke="#40A9FF" stroke-width="14"/>
+      <circle cx="55" cy="55" r="38" fill="none" stroke="#6A7BB8" stroke-width="6"/>
+      <path d="M 82 82 L 125 125" stroke="#EE535C" stroke-width="18" stroke-linecap="round"/>
+      <path d="M 82 82 L 125 125" stroke="#F4DC42" stroke-width="8" stroke-linecap="round"/>
+      <path d="M 35 40 A 25 25 0 0 1 65 25" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" opacity="0.8"/>
+    </g>
+
+    <!-- 復原圖示 -->
+    <g id="custom-undo-svg">
+      <path d="M 9 14 L 4 9 L 9 4" />
+      <path d="M 4 9 Q 13 4 18 10 Q 21 15 17 20" />
+    </g>
+  </svg>
+
+  <!-- 左側快捷工具列 -->
+  <div id="side-panel-left" class="side-panel">
+    <div class="side-tool-btn" onclick="undoLastAction()" title="復原上一步">
+      <svg class="svg-undo-icon" viewBox="0 0 24 24"><use href="#custom-undo-svg"/></svg>
+    </div>
+    <div class="side-tool-btn side-hand" onclick="setMode('hand')" title="選取">
+      <svg class="svg-tool-icon" viewBox="0 0 130 130"><use href="#custom-cursor-svg"/></svg>
+    </div>
+    <div class="side-tool-btn side-crop" onclick="setMode('crop')" title="框選放大">
+      <svg class="svg-tool-icon" viewBox="0 0 140 140"><use href="#custom-crop-svg"/></svg>
+    </div>
+    <div class="side-tool-btn side-pen active" onclick="setMode('pen')" title="畫筆">
+      <svg class="svg-tool-icon" viewBox="0 0 140 140"><use href="#custom-pen-svg"/></svg>
+    </div>
+    <div class="side-tool-btn side-compass" onclick="setMode('compass')" title="圓規畫弧">
+      <svg class="svg-tool-icon" viewBox="0 0 100 140"><use href="#custom-compass-svg"/></svg>
+    </div>
+    <div class="side-tool-btn side-eraser" onclick="setMode('eraser')" title="橡皮擦">
+      <svg class="svg-tool-icon" viewBox="0 0 140 140"><use href="#custom-eraser-svg"/></svg>
+    </div>
+    <div class="side-color-group">
+      <div class="color-btn selected" style="background: #000000;" data-color="#000000" onclick="selectColor('#000000')"></div>
+      <div class="color-btn" style="background: #0000ff;" data-color="#0000ff" onclick="selectColor('#0000ff')"></div>
+      <div class="color-btn" style="background: #ff0000;" data-color="#ff0000" onclick="selectColor('#ff0000')"></div>
+      <div class="color-btn" style="background: #800080;" data-color="#800080" onclick="selectColor('#800080')"></div>
+      <div class="color-btn" style="background: #008000;" data-color="#008000" onclick="selectColor('#008000')"></div>
+      <div class="color-btn" style="background: #ffd700;" data-color="#ffd700" onclick="selectColor('#ffd700')"></div>
+    </div>
+    <!-- 左側工具列頁碼按鈕 -->
+    <div class="side-page-btn" onclick="openPageCalculator()" title="點擊選擇頁碼">
+      <span class="page-icon">📄</span>
+      <span class="page-num-text side-page-display">1/1</span>
+    </div>
+  </div>
+
+  <!-- 右側快捷工具列 -->
+  <div id="side-panel-right" class="side-panel">
+    <div class="side-tool-btn" onclick="undoLastAction()" title="復原上一步">
+      <svg class="svg-undo-icon" viewBox="0 0 24 24"><use href="#custom-undo-svg"/></svg>
+    </div>
+    <div class="side-tool-btn side-hand" onclick="setMode('hand')" title="選取">
+      <svg class="svg-tool-icon" viewBox="0
